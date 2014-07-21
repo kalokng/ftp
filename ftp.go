@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
+
 	"net"
 	"net/textproto"
 	"strconv"
@@ -60,7 +62,8 @@ func Connect(addr string) (*ServerConn, error) {
 		features: make(map[string]string),
 	}
 
-	_, _, err = c.conn.ReadResponse(StatusReady)
+	_, msg, err := c.conn.ReadResponse(StatusReady)
+	log.Println(msg)
 	if err != nil {
 		c.Quit()
 		return nil, err
@@ -251,14 +254,15 @@ func (c *ServerConn) cmdDataConn(format string, args ...interface{}) (net.Conn, 
 		return nil, err
 	}
 
-	code, msg, err := c.conn.ReadCodeLine(-1)
+	//c.conn.R.WriteTo(os.Stdout)
+	code, msg, err := c.conn.ReadResponse(-1)
 	if err != nil {
 		conn.Close()
 		return nil, err
 	}
 	if code != StatusAlreadyOpen && code != StatusAboutToSend {
 		conn.Close()
-		return nil, &textproto.Error{code, msg}
+		return nil, &textproto.Error{Code: code, Msg: msg}
 	}
 
 	return conn, nil
@@ -488,4 +492,25 @@ func (r *response) Close() error {
 		err = err2
 	}
 	return err
+}
+
+// Size issues a SIZE FTP command, which Returns the size of the specified
+// path in bytes.
+func (c *ServerConn) Size(path string) (int64, error) {
+	_, msg, err := c.cmd(StatusFile, "SIZE %s", path)
+	if err != nil {
+		return 0, err
+	}
+
+	return strconv.ParseInt(msg, 10, 64)
+}
+
+// ModifiedTime issues a MDTM FTP command, which gets the modified timestamp of
+// the specified path.
+func (c *ServerConn) ModifiedTime(path string) (time.Time, error) {
+	_, msg, err := c.cmd(StatusFile, "MDTM %s", path)
+	if err != nil {
+		return time.Time{}, err
+	}
+	return time.Parse("20060102150405", msg) //Time with format YYYYMMDDhhmmss
 }
